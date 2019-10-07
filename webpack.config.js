@@ -18,7 +18,6 @@ const publicPath = getPath('public')
 
 module.exports = (...args) => {
   const isProd = args[1].mode === 'production'
-  const isDev = args[1].mode === 'development' || true
 
   return {
     mode: isProd ? 'production' : 'development',
@@ -31,7 +30,7 @@ module.exports = (...args) => {
       hot: true,
       noInfo: true,
       open: false, // 打开浏览器
-      overlay: true, // 出现错误了会全屏 overlay 显示
+      overlay: false, // 出现错误了会全屏 overlay 显示
       // quiet: true,
       publicPath: '/',
       watchContentBase: true,
@@ -40,90 +39,125 @@ module.exports = (...args) => {
         ignored: ignoredFiles(srcPath),
       },
     },
-    entry: {
-      index: ['react-hot-loader/patch', getPath('src/index.js')],
-    },
+    entry: [!isProd && require.resolve('react-dev-utils/webpackHotDevClient'), !isProd && 'react-hot-loader/patch', getPath('src/index.js')].filter(
+      Boolean
+    ),
     output: {
       path: distPath,
-      filename: 'index.js',
-      chunkFilename: 'assets/js/[id].chunk.js',
+      filename: isProd ? 'static/js/[name].[contenthash:8].js' : 'static/js/bundle.js',
+      chunkFilename: isProd ? 'static/js/[name].[contenthash:8].chunk.js' : 'static/js/[name].chunk.js',
       publicPath: '/',
-      // publicPath: getPath('dist'),
     },
     optimization: {
+      minimize: isProd,
       minimizer: [isProd && new TerserJSPlugin({}), isProd && new OptimizeCSSAssetsPlugin({})].filter(Boolean),
       splitChunks: {
         chunks: 'all',
+        name: false,
+      },
+      runtimeChunk: {
+        name: entrypoint => `runtime-${entrypoint.name}`,
       },
     },
     resolve: {
-      alias: { '@': srcPath, 'react-dom': '@hot-loader/react-dom' },
+      alias: { '@': srcPath, 'react-dom': isProd ? 'react-dom' : '@hot-loader/react-dom' },
     },
     module: {
       rules: [
         {
-          test: /\.jsx?$/,
-          use: [
+          oneOf: [
             {
-              loader: 'thread-loader',
-            },
-            {
-              loader: 'babel-loader',
-              options: {
-                cacheDirectory: true,
-              },
-            },
-          ],
-          exclude: /node_modules/,
-        },
-        {
-          test: /\.css$/,
-          use: ['style-loader', 'css-loader'],
-        },
-        {
-          test: /\.less$/,
-          use: [
-            {
-              loader: MiniCssExtractPlugin.loader,
-              options: {
-                // you can specify a publicPath here
-                // by default it uses publicPath in webpackOptions.output
-                hmr: true,
-              },
-            },
-            {
-              loader: 'css-loader',
-              options: {
-                modules: {
-                  localIdentName: '[path][name]__[local]--[hash:base64:5]',
+              test: /\.jsx?$/i,
+              use: [
+                {
+                  loader: 'thread-loader',
                 },
+                {
+                  loader: 'babel-loader',
+                  options: {
+                    cacheDirectory: true,
+                  },
+                },
+              ],
+              exclude: /node_modules/,
+            },
+            {
+              test: /\.(le|c)ss$/i,
+              use: ['style-loader', 'css-loader', 'less-loader'],
+              include: nodeModulesPath,
+            },
+            {
+              test: /\.(le|c)ss$/i,
+              use: [
+                isProd
+                  ? {
+                      loader: MiniCssExtractPlugin.loader,
+                    }
+                  : 'style-loader',
+                {
+                  loader: 'css-loader',
+                  options: {
+                    modules: {
+                      localIdentName: isProd ? '[hash:base64]' : '[path][name]__[local]--[hash:base64:5]',
+                    },
+                  },
+                },
+                {
+                  loader: 'less-loader',
+                },
+              ],
+              include: srcPath,
+            },
+            {
+              test: /\.(png|jpe?g|gif|svg)$/i,
+              loader: 'url-loader',
+              options: {
+                limit: 8192,
+                name: 'static/media/[name].[hash:8].[ext]',
               },
             },
             {
-              loader: 'less-loader',
+              loader: require.resolve('file-loader'),
+              exclude: [/\.(js|mjs|jsx|ts|tsx)$/, /\.html$/, /\.json$/],
+              options: {
+                name: 'static/media/[name].[hash:8].[ext]',
+              },
             },
           ],
         },
       ],
     },
     plugins: [
-      new MiniCssExtractPlugin({
-        // Options similar to the same options in webpackOptions.output
-        // all options are optional
-        filename: 'assets/css/[name].css',
-        chunkFilename: 'assets/css/[id].css',
-        ignoreOrder: false, // Enable to remove warnings about conflicting order
-      }),
+      isProd &&
+        new MiniCssExtractPlugin({
+          // Options similar to the same options in webpackOptions.output
+          // all options are optional
+          filename: 'static/css/[name].[contenthash:8].css',
+          chunkFilename: 'static/css/[name].[contenthash:8].chunk.css',
+          ignoreOrder: false, // Enable to remove warnings about conflicting order
+        }),
       new webpack.DefinePlugin({
         APP_NAME: JSON.stringify('webpack-react'),
       }),
-      new webpack.ProvidePlugin({}),
+      // new webpack.ProvidePlugin({}),
       new ProgressBarPlugin(),
       new HtmlWebpackPlugin({
-        template: getPath('src/assets/index.html'),
+        template: getPath('src/index.temp.html'),
         filename: 'index.html',
         title: 'webpack 测试',
         favicon: getPath('public/favicon.ico'),
+        minify: isProd
+          ? {
+              collapseWhitespace: true,
+              removeComments: true,
+              removeRedundantAttributes: true,
+              removeScriptTypeAttributes: true,
+              removeStyleLinkTypeAttributes: true,
+              useShortDoctype: true,
+              minifyJS: true,
+              minifyCSS: true,
+            }
+          : false,
       }),
       isProd &&
         new CopyWebpackPlugin([
