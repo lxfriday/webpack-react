@@ -5,16 +5,20 @@ const HtmlWebpackPlugin = require('html-webpack-plugin')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
 const { CleanWebpackPlugin } = require('clean-webpack-plugin')
 const ignoredFiles = require('react-dev-utils/ignoredFiles')
-const TerserJSPlugin = require('terser-webpack-plugin')
+const errorOverlayMiddleware = require('react-dev-utils/errorOverlayMiddleware')
+const evalSourceMapMiddleware = require('react-dev-utils/evalSourceMapMiddleware')
 const MiniCssExtractPlugin = require('mini-css-extract-plugin')
+const ManifestPlugin = require('webpack-manifest-plugin')
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin')
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
+
+const hmbrc = require(path.resolve(process.cwd(), '.hmbrc'))
 
 const getPath = name => path.resolve(__dirname, name)
-
 const distPath = getPath('dist')
 const srcPath = getPath('src')
 const nodeModulesPath = getPath('node_modules')
-const publicPath = getPath('public')
+const prjPublicPath = getPath('public')
 
 module.exports = (...args) => {
   const isProd = args[1].mode === 'production'
@@ -23,7 +27,7 @@ module.exports = (...args) => {
     mode: isProd ? 'production' : 'development',
     devtool: isProd ? 'source-map' : 'eval',
     devServer: {
-      contentBase: publicPath,
+      contentBase: prjPublicPath,
       port: 3000,
       compress: true,
       historyApiFallback: true,
@@ -32,11 +36,17 @@ module.exports = (...args) => {
       open: false, // 打开浏览器
       overlay: false, // 出现错误了会全屏 overlay 显示
       // quiet: true,
-      publicPath: '/',
+      publicPath: hmbrc.publicPath,
       watchContentBase: true,
       clientLogLevel: 'none',
       watchOptions: {
         ignored: ignoredFiles(srcPath),
+      },
+      before(app, server) {
+        // This lets us fetch source contents from webpack for the error overlay
+        app.use(evalSourceMapMiddleware(server))
+        // This lets us open files from the runtime error overlay.
+        app.use(errorOverlayMiddleware())
       },
     },
     entry: [!isProd && require.resolve('react-dev-utils/webpackHotDevClient'), !isProd && 'react-hot-loader/patch', getPath('src/index.js')].filter(
@@ -46,11 +56,11 @@ module.exports = (...args) => {
       path: distPath,
       filename: isProd ? 'static/js/[name].[contenthash:8].js' : 'static/js/bundle.js',
       chunkFilename: isProd ? 'static/js/[name].[contenthash:8].chunk.js' : 'static/js/[name].chunk.js',
-      publicPath: '/',
+      publicPath: hmbrc.publicPath,
     },
     optimization: {
       minimize: isProd,
-      minimizer: [isProd && new TerserJSPlugin({}), isProd && new OptimizeCSSAssetsPlugin({})].filter(Boolean),
+      // minimizer: [isProd && new OptimizeCSSAssetsPlugin({})].filter(Boolean),
       splitChunks: {
         chunks: 'all',
         name: false,
@@ -60,7 +70,11 @@ module.exports = (...args) => {
       },
     },
     resolve: {
-      alias: { '@': srcPath, 'react-dom': isProd ? 'react-dom' : '@hot-loader/react-dom' },
+      alias: {
+        '@': srcPath,
+        'react-dom': isProd ? 'react-dom' : '@hot-loader/react-dom',
+        '@ant-design/icons/lib/dist$': path.resolve(__dirname, './src/assets/icons.js'),
+      },
     },
     module: {
       rules: [
@@ -83,7 +97,15 @@ module.exports = (...args) => {
             },
             {
               test: /\.(le|c)ss$/i,
-              use: ['style-loader', 'css-loader', 'less-loader'],
+              use: [
+                isProd
+                  ? {
+                      loader: MiniCssExtractPlugin.loader,
+                    }
+                  : 'style-loader',
+                'css-loader',
+                { loader: 'less-loader', options: { javascriptEnabled: true } },
+              ],
               include: nodeModulesPath,
             },
             {
@@ -104,6 +126,9 @@ module.exports = (...args) => {
                 },
                 {
                   loader: 'less-loader',
+                  options: {
+                    javascriptEnabled: true,
+                  },
                 },
               ],
               include: srcPath,
@@ -117,7 +142,7 @@ module.exports = (...args) => {
               },
             },
             {
-              loader: require.resolve('file-loader'),
+              loader: 'file-loader',
               exclude: [/\.(js|mjs|jsx|ts|tsx)$/, /\.html$/, /\.json$/],
               options: {
                 name: 'static/media/[name].[hash:8].[ext]',
@@ -128,6 +153,11 @@ module.exports = (...args) => {
       ],
     },
     plugins: [
+      new ManifestPlugin({}),
+      new OptimizeCSSAssetsPlugin({}),
+      // 优化 momentjs
+      new webpack.IgnorePlugin(/^\.\/locale$/, /moment$/),
+      isProd && new BundleAnalyzerPlugin(),
       isProd &&
         new MiniCssExtractPlugin({
           // Options similar to the same options in webpackOptions.output
@@ -137,14 +167,14 @@ module.exports = (...args) => {
           ignoreOrder: false, // Enable to remove warnings about conflicting order
         }),
       new webpack.DefinePlugin({
-        APP_NAME: JSON.stringify('webpack-react'),
+        'process.env.APP_NAME': JSON.stringify('webpack-react'),
       }),
       // new webpack.ProvidePlugin({}),
       new ProgressBarPlugin(),
       new HtmlWebpackPlugin({
         template: getPath('src/index.temp.html'),
         filename: 'index.html',
-        title: 'webpack 测试',
+        title: hmbrc.title,
         favicon: getPath('public/favicon.ico'),
         minify: isProd
           ? {
@@ -162,7 +192,7 @@ module.exports = (...args) => {
       isProd &&
         new CopyWebpackPlugin([
           {
-            from: publicPath,
+            from: prjPublicPath,
             to: distPath,
           },
         ]),
