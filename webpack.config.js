@@ -9,7 +9,10 @@ const errorOverlayMiddleware = require('react-dev-utils/errorOverlayMiddleware')
 const evalSourceMapMiddleware = require('react-dev-utils/evalSourceMapMiddleware')
 const MiniCssExtractPlugin = require('mini-css-extract-plugin')
 const ManifestPlugin = require('webpack-manifest-plugin')
+const TerserPlugin = require('terser-webpack-plugin')
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin')
+const safePostCssParser = require('postcss-safe-parser')
+const postcssNormalize = require('postcss-normalize')
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
 
 const hmbrc = require(path.resolve(process.cwd(), '.hmbrc'))
@@ -23,8 +26,12 @@ const prjPublicPath = getPath('public')
 module.exports = (...args) => {
   const isProd = args[1].mode === 'production'
 
+  process.env.NODE_ENV = isProd ? 'production' : 'development'
+
   return {
     mode: isProd ? 'production' : 'development',
+    // Stop compilation early in production
+    bail: isProd,
     devtool: isProd ? 'source-map' : 'eval',
     devServer: {
       contentBase: prjPublicPath,
@@ -60,7 +67,27 @@ module.exports = (...args) => {
     },
     optimization: {
       minimize: isProd,
-      // minimizer: [isProd && new OptimizeCSSAssetsPlugin({})].filter(Boolean),
+      minimizer: [
+        isProd &&
+          new TerserPlugin({
+            terserOptions: {
+              parse: {
+                ecma: 8,
+              },
+              output: {
+                ecma: 5,
+                comments: false,
+                ascii_only: true,
+              },
+            },
+          }),
+        isProd &&
+          new OptimizeCSSAssetsPlugin({
+            cssProcessorOptions: {
+              parser: safePostCssParser,
+            },
+          }),
+      ].filter(Boolean),
       splitChunks: {
         chunks: 'all',
         name: false,
@@ -70,10 +97,12 @@ module.exports = (...args) => {
       },
     },
     resolve: {
+      extensions: ['.js', '.ts', '.jsx', '.tsx'].filter(ext => hmbrc.useTs || !ext.includes('ts')),
+      modules: ['node_modules', nodeModulesPath],
+      mainFields: ['main'],
       alias: {
         '@': srcPath,
         'react-dom': isProd ? 'react-dom' : '@hot-loader/react-dom',
-        '@ant-design/icons/lib/dist$': path.resolve(__dirname, './src/assets/icons.js'),
       },
     },
     module: {
@@ -81,7 +110,7 @@ module.exports = (...args) => {
         {
           oneOf: [
             {
-              test: /\.jsx?$/i,
+              test: /\.(js|ts)x?$/i,
               use: [
                 {
                   loader: 'thread-loader',
@@ -90,6 +119,7 @@ module.exports = (...args) => {
                   loader: 'babel-loader',
                   options: {
                     cacheDirectory: true,
+                    cacheCompression: false,
                   },
                 },
               ],
@@ -104,8 +134,23 @@ module.exports = (...args) => {
                     }
                   : 'style-loader',
                 'css-loader',
+                isProd && {
+                  loader: 'postcss-loader',
+                  options: {
+                    ident: 'postcss',
+                    plugins: () => [
+                      require('postcss-flexbugs-fixes'),
+                      require('postcss-preset-env')({
+                        autoprefixer: {
+                          flexbox: 'no-2009',
+                        },
+                        stage: 3,
+                      }),
+                    ],
+                  },
+                },
                 { loader: 'less-loader', options: { javascriptEnabled: true } },
-              ],
+              ].filter(Boolean),
               include: nodeModulesPath,
             },
             {
@@ -124,13 +169,28 @@ module.exports = (...args) => {
                     },
                   },
                 },
+                isProd && {
+                  loader: 'postcss-loader',
+                  options: {
+                    ident: 'postcss',
+                    plugins: () => [
+                      require('postcss-flexbugs-fixes'),
+                      require('postcss-preset-env')({
+                        autoprefixer: {
+                          flexbox: 'no-2009',
+                        },
+                        stage: 3,
+                      }),
+                    ],
+                  },
+                },
                 {
                   loader: 'less-loader',
                   options: {
                     javascriptEnabled: true,
                   },
                 },
-              ],
+              ].filter(Boolean),
               include: srcPath,
             },
             {
@@ -153,11 +213,10 @@ module.exports = (...args) => {
       ],
     },
     plugins: [
-      new ManifestPlugin({}),
-      new OptimizeCSSAssetsPlugin({}),
+      // isProd && new BundleAnalyzerPlugin(),
+      isProd && new ManifestPlugin({}),
       // 优化 momentjs
       new webpack.IgnorePlugin(/^\.\/locale$/, /moment$/),
-      isProd && new BundleAnalyzerPlugin(),
       isProd &&
         new MiniCssExtractPlugin({
           // Options similar to the same options in webpackOptions.output
@@ -167,7 +226,7 @@ module.exports = (...args) => {
           ignoreOrder: false, // Enable to remove warnings about conflicting order
         }),
       new webpack.DefinePlugin({
-        'process.env.APP_NAME': JSON.stringify('webpack-react'),
+        // 'process.env.NODE_ENV': JSON.stringify(isProd ? 'production' : 'development'),
       }),
       // new webpack.ProvidePlugin({}),
       new ProgressBarPlugin(),

@@ -5,8 +5,14 @@ import styles from './index.less'
 import analytics from '@/assets/img/analytics.png'
 
 import { APP_CHANGE_NAME } from '../../reducer/app'
+import { log } from './test'
+import aJson from './a.json'
 
 function Login({ dispatch }) {
+  log('hello')
+  console.log(aJson)
+  console.log(process.env.NODE_ENV)
+
   return (
     <div className={styles.container}>
       <Card>

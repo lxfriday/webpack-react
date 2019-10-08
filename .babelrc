@@ -1,7 +1,4 @@
 {
-  "presets": [["@babel/preset-env", { "modules": false, "loose": true }], "@babel/preset-react"],
-  "plugins": [
-    ["@babel/plugin-proposal-decorators", { "decoratorsBeforeExport": true }],
-    ["import", { "libraryName": "antd", "style": true, "libraryDirectory": "es" }]
-  ]
+  "presets": ["react-app"],
+  "plugins": [["import", { "libraryName": "antd", "style": true, "libraryDirectory": "es" }]]
 }
