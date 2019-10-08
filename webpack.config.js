@@ -12,6 +12,7 @@ const ManifestPlugin = require('webpack-manifest-plugin')
 const TerserPlugin = require('terser-webpack-plugin')
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin')
 const safePostCssParser = require('postcss-safe-parser')
+const HappyPack = require('happypack')
 const postcssNormalize = require('postcss-normalize')
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
 
@@ -112,9 +113,7 @@ module.exports = (...args) => {
             {
               test: /\.(js|ts)x?$/i,
               use: [
-                {
-                  loader: 'thread-loader',
-                },
+                'thread-loader',
                 {
                   loader: 'babel-loader',
                   options: {
